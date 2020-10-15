@@ -1,0 +1,96 @@
+---
+title: "BMKG - EDGAR"
+author: "Hubert Thieriot (CREA)"
+date: "10/15/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# EDGAR Emission inventory
+
+In this presentation, we'll download, analyse and plot EDGAR emission data in Indonesia. <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Load required libraries
+```{r libraries, results="hide"}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+
+## Downloading data
+We download data from [EDGAR website](https://edgar.jrc.ec.europa.eu/overview.php?v=50_AP) directly.
+```{r download, cache=T}
+# SO2
+download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=227347","so2.zip")
+unzip(zipfile="so2.zip", files = "v50_SO2_1970_2015.xls", exdir=".")
+d.so2 <- readxl::read_xls("v50_SO2_1970_2015.xls", skip = 8) %>%
+    mutate(pollutant="so2") %>%
+    filter(ISO_A3=="IDN")
+
+# NO2
+download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=227343","nox.zip")
+unzip(zipfile="nox.zip", files = "v50_NOx_1970_2015.xls", exdir=".")
+d.nox <- readxl::read_xls("v50_NOx_1970_2015.xls", skip = 8) %>%
+    mutate(pollutant="nox") %>%
+    filter(ISO_A3=="IDN")
+
+d.wide <- bind_rows(d.so2,
+               d.nox)
+
+d <- d.wide %>%
+  tidyr::pivot_longer(cols=as.character(seq(1970, 2015)),
+                      names_to="year") %>%
+  mutate_at(c("year", "value"), as.numeric) %>%
+  filter(!is.na(value))
+```
+
+## Plot timeseries in Indonesia
+
+
+```{r plot1, echo=FALSE, fig.width = 10, warning=FALSE}
+ggplot(d) +
+  geom_area(aes(x=year, y=value, fill=IPCC_description)) +
+  facet_wrap(~pollutant) +
+  theme_light() +
+  theme(legend.position="bottom") +
+  labs(title="Emissions in Indonesia",
+       y="kt/year",
+       x=NULL,
+       caption="Source: EDGAR v5.0")
+```
+
+```{r plot2, echo=FALSE, fig.width = 10, warning=FALSE}
+ggplot(d %>% filter(year==2015) %>% arrange(pollutant, value)) +
+  geom_bar(stat="identity", aes(x=value, y=reorder(IPCC_description, value))) +
+  facet_wrap(~pollutant) +
+  theme_light() +
+  theme(legend.position="bottom") +
+  labs(title="2015 Emissions in Indonesia",
+       x="kt/year",
+       y=NULL,
+       caption="Source: EDGAR v5.0")
+```
+
+## Looking at provincial data
+This time, we'll used the 2015 gridded data from EDGAR 5.0.
+
+```{r, results="hide"}
+library(raster)
+library(ncdf4)
+```
+
+```{r, results="hide"}
+
+# SO2
+download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=226023","so2_grid.zip")
+unzip(zipfile="so2_grid.zip", files = "v50_SO2_2015.0.1x0.1.nc", exdir=".")
+r.so2 <- raster::raster("v50_SO2_2015.0.1x0.1.nc")
+```
+
