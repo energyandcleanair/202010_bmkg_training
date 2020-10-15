@@ -1,6 +1,6 @@
 ---
 title: "BMKG - EDGAR"
-author: "Hubert Thieriot (CREA)"
+author: "Centre for Research on Energy and Clean Air"
 date: "10/15/2020"
 output: html_document
 ---
@@ -26,7 +26,7 @@ library(tidyr)
 
 ## Downloading data
 We download data from [EDGAR website](https://edgar.jrc.ec.europa.eu/overview.php?v=50_AP) directly.
-```{r download, cache=T}
+```{r download, cache=T, message=F, warning=F}
 # SO2
 download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=227347","so2.zip")
 unzip(zipfile="so2.zip", files = "v50_SO2_1970_2015.xls", exdir=".")
@@ -86,7 +86,7 @@ library(raster)
 library(ncdf4)
 ```
 
-```{r, results="hide"}
+```{r, results="hide", message=FALSE}
 
 # SO2
 download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=226023","so2_grid.zip")
