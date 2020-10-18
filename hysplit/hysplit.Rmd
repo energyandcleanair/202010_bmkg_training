@@ -1,0 +1,151 @@
+---
+title: "Training for BMKG - HYSPLIT"
+author: "Centre for Research on Energy and Clean Air (CREA)"
+date: "19 October 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=F)
+knitr::opts_chunk$set(root.dir=normalizePath('hysplit/'))
+
+```
+
+# Backward trajectories using HYSPLIT
+[HYSPLIT official website](https://www.ready.noaa.gov/HYSPLIT.php).
+
+We first need to install [splitr](https://github.com/rich-iannone/splitr) which allows to use HYSPLIT in convenient way using R.
+
+```{r cars}
+if(!require(splitr)){devtools::install_github("rich-iannone/splitr"); require(splitr)}
+```
+
+Other packages used for this tutorial are:
+```{r}
+library(lubridate)
+
+
+```
+# Backward trajectories of a single date
+
+Let's take Jakarta and 1 September 2020 as an example.
+
+```{r pressure, echo=FALSE}
+lat <- -6.2088
+lon <- 106.8456
+date <- "2020-09-01"
+```
+
+HYSPLIT/Splitr needs some parameters:
+- weather dataset used to calculate trajectories
+- height of the 'receptor'
+- duration of the trajectories
+### Hysplit parameters
+```{r}
+met_type <- "reanalysis" # or gdas1
+height <- 10 #meter
+duration <- 72 #hours
+```
+
+We also specify the folder where weather data will be cached (can take few GBs), and results temporarily stored.
+```{r}
+dir_hysplit_met <- "/Volumes/ext1/data/weather/hysplit_met/" # Folder where weather files will be downloaded/cached
+dir_hysplit_output <- here::here("hysplit_output") # Folders where HYSPLIT results will be temporarily stored
+```
+
+Now we can run the backward trajectory calculations!
+```{r}
+trajs <- splitr::hysplit_trajectory(
+      lon = lon,
+      lat = lat,
+      height = height,
+      duration = duration,
+      days = lubridate::date(date),
+      daily_hours = c(0, 6, 12, 18), # The weather dataset is available every 6-hours
+      direction = "backward",
+      met_type = met_type,
+      extended_met = F,
+      met_dir = dir_hysplit_met,
+      exec_dir = dir_hysplit_output,
+      clean_up = F
+)
+trajs
+```
+
+The `trajs` dataframe contains the trajectories. Let's plot them.
+
+
+```{r}
+require(ggmap)
+plot_trajs <- function(trajs){
+  
+  # Get the boundary box: 50km around trajectories
+  buffer_km <- 50
+  bbox <- sf::st_as_sf(trajs, coords=c("lon","lat"), crs=4326) %>%
+    sf::st_transform(crs=3857) %>% # Reproject in pseudo-mercator to have meter unit
+    sf::st_buffer(buffer_km*1E3) %>%
+    sf::st_transform(crs=4326) %>%
+    sf::st_bbox() %>%
+    unname()
+    
+  basemap <- ggmap::get_stamenmap(bbox = bbox,
+                                  zoom = 8,
+                                  where="/Volumes/ext1/data/basemap")
+  
+  ggmap(basemap) +
+     coord_cartesian() +
+      # trajectory lines
+     geom_path(data = trajs %>%
+                 dplyr::arrange(hour_along) %>%
+                 mutate(subcluster=paste(traj_dt_i, hour_along %/% 8)),
+               arrow = arrow(angle=18, length=unit(0.1,"inches")),
+               aes(x = lon, y = lat, group=subcluster), color="darkred", alpha=0.6) +
+      geom_path(data = trajs,
+               aes(x = lon, y = lat, group=traj_dt_i), color="darkred", alpha=0.6) +
+     # theme
+     theme(panel.background = element_rect(fill='lightgray'),
+           panel.border = element_rect(color='black', fill=NA),
+           panel.grid = element_line(color=NA),
+           plot.caption = element_text(lineheight = 0.9),
+           legend.position="right",
+           legend.key = element_rect(fill='white')) +
+     labs(title=paste("Sources or air flowing into Jakarta"),
+          subtitle = date,
+          x='', y='',
+          caption=paste0("Source: CREA based on HYSPLIT. ",
+                         "Weather dataset: ", met_type, " ",
+                         "Receptor height: ", height, "m. ",
+                         "Duration: ", duration, " hour."))
+   
+}
+```
+
+```{r}
+plot_trajs(trajs)
+```
+
+
+# Clustered trajectories over a long period of time
+We might be interested in trajectories over a long period of time.
+
+```{r, cache=T}
+date_from <- "2019-01-01"
+date_to <- "2019-12-31"
+
+trajs.2019 <- splitr::hysplit_trajectory(
+      lon = lon,
+      lat = lat,
+      height = height,
+      duration = duration,
+      days = seq(lubridate::date(date_from), lubridate::date(date_to), by="d"),
+      daily_hours = c(0, 6, 12, 18), # The weather dataset is available every 6-hours
+      direction = "backward",
+      met_type = met_type,
+      extended_met = F,
+      met_dir = dir_hysplit_met,
+      exec_dir = dir_hysplit_output,
+      clean_up = F
+)
+
+```
+
