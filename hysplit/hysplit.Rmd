@@ -12,12 +12,21 @@ knitr::opts_chunk$set(root.dir=normalizePath(file.path(getwd(),'hysplit')))
 ```
 
 # Backward trajectories using HYSPLIT
-[HYSPLIT official website](https://www.ready.noaa.gov/HYSPLIT.php).
+In this section, we will be using [HYSPLIT](https://www.ready.noaa.gov/HYSPLIT.php) to find out where the air reaching Jakarta is coming from. We'll combine this with PM 2.5 levels to understand where potential transboundary sources of air pollution lie.
 
-We first need to install [splitr](https://github.com/rich-iannone/splitr) which allows to use HYSPLIT in convenient way using R.
+Note that this document is more of an introduction than an actual scientific analysis, as many potential factors and sensitivy analyses won't be included.
+
+## Installing packages
+
+Beside more traditional packages, we weill be using three dedicated packages on air pollution, namely:
+- RCREA: CREA's own package to retrieve air pollution levels
+- [Splitr](https://github.com/rich-iannone/splitr): a convenient wrapper for HYSPLIT calculation
+- [OpenAIR](https://davidcarslaw.github.io/openair/): a very powerful package to analyse air trajectories
 
 ```{r cars}
+if(!require(rcrea)){devtools::install_github("energyandcleanair/rcrea"); require(rcrea)}
 if(!require(splitr)){devtools::install_github("rich-iannone/splitr"); require(splitr)}
+if(!require(openair)){devtools::install_github('davidcarslaw/openair'); library(openair)}
 ```
 
 Other packages used for this tutorial are:
@@ -28,7 +37,8 @@ library(dplyr)
 library(ggmap)
 library(ggplot2)
 ```
-# Backward trajectories of a single date
+
+## Backward trajectories of a single date
 
 Let's take Jakarta and 1 September 2020 as an example.
 
@@ -42,7 +52,7 @@ HYSPLIT/Splitr needs some parameters:
 - weather dataset used to calculate trajectories
 - height of the 'receptor'
 - duration of the trajectories
-### Hysplit parameters
+
 ```{r}
 met_type <- "reanalysis" # or gdas1
 height <- 10 #meter
@@ -75,7 +85,6 @@ trajs
 ```
 
 The `trajs` dataframe contains the trajectories. Let's plot them.
-
 
 ```{r}
 plot_trajs <- function(trajs){
@@ -126,8 +135,8 @@ plot_trajs(trajs)
 ```
 
 
-# Clustered trajectories over a long period of time
-We might be interested in trajectories over a long period of time.
+# Trajectories over a longer period: 2019
+We might be interested in trajectories over a longer period of time. Here we'll consider the whole year of 2019.
 
 ```{r, cache=T, warning=F, message=F}
 date_from <- "2019-01-01"
@@ -162,13 +171,8 @@ trajs.2019 <- do.call('rbind',
                             mc.cores = parallel::detectCores()-1))
 ```
 
-We use the very powerful [OpenAIR package](https://davidcarslaw.github.io/openair/) to analyse trajectories.
-
-```{r}
-if(!require(openair)){devtools::install_github('davidcarslaw/openair'); library(openair)}
-```
-
 We first need to make trajectories compatible with `openair` (e.g. rename or add certain fields):
+
 ```{r}
 format_for_openair <- function(trajs){
    # Update fields to be compatible with OpenAIR
@@ -185,14 +189,45 @@ format_for_openair <- function(trajs){
 trajs.2019 <- format_for_openair(trajs.2019)
 ```
 
+Let's also add PM2.5 values, using CREA R package.
+
+```{r}
+pm25.2019 <- rcrea::measurements(city="jakarta", source="openaq", date_from=date_from, date_to=date_to, poll=rcrea::PM25) %>%
+  mutate(date=lubridate::date(date))
+trajs.poll.2019 <- trajs.2019 %>% left_join(pm25.2019, by=c("day"="date"))
+```
+
+### Plotting monthly trajectories, colored by PM2.5 levels
+
+```{r}
+plt.month <- trajPlot(
+  trajs.poll.2019,
+  pollutant = "value",
+  type = "month",
+  map = TRUE,
+  group = NA,
+  map.fill = TRUE,
+  map.res = "default",
+  map.cols = "grey40",
+  map.alpha = 0.4,
+  projection = "mercator",
+  parameters = NULL,
+  orientation = c(90, 0, 0),
+  grid.col = "deepskyblue",
+  npoints = 12,
+  origin = TRUE
+)
+
+```
+
 
 Plotting clusters:
 
 ```{r}
-plot_traj_clusters <- function(trajs, n_clusters=5, statistics="frequency"){
+plot_traj_clusters <- function(trajs, n_clusters=4, statistics="frequency"){
   
   openair::trajCluster(
-    trajs,
+    trajs.2019,
     method = "Euclid",
     n.cluster = n_clusters,
     plot = T,
@@ -210,5 +245,26 @@ plot_traj_clusters <- function(trajs, n_clusters=5, statistics="frequency"){
   )
 }
 
-plot_traj_clusters(trajs.2019)
+(plt.trajs.2019 <- plot_traj_clusters(trajs.2019))
 ```
+
+Many more plotting available [here](https://bookdown.org/david_carslaw/openair/sec-trajPlot.html)
+
+### Combining EDGAR with HYSPLIT
+
+<!-- ```{r} -->
+<!-- clusters.data <- plt.trajs.2019$plot$data -->
+<!-- clusters.data.sf <- sf::st_as_sf(clusters.data, coords=c("lon","lat"), crs=4326) %>% -->
+<!--   group_by(MyGroupVar) %>% arrange(date) %>% dplyr::summarise(do_union = FALSE) %>% st_cast("LINESTRING") -->
+<!-- cluster.data.spatial <- as_Spatial(clusters.data.sf) -->
+
+<!-- nc.file <- file.path("..","edgar","v50_SO2_2015.0.1x0.1.nc") -->
+<!-- r <- raster::raster(nc.file) %>% raster::mask(adm1) -->
+<!-- cuts <- c(.Machine$double.eps*1e13, 6e-4, 6e-2, 6e-1, 6, 30, 60, 240, 450, 1200)*1e-13 #set breaks -->
+<!-- pal <- colorRampPalette(c("darkgreen","yellow", "red")) -->
+
+<!-- plot(r, breaks=cuts, col = pal(10), ext=bbox(adm1), box=F) + #plot with defined breaks -->
+<!--   plot(cluster.data.spatial, add=T) -->
+
+
+<!-- ``` -->
