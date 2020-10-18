@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message=F)
-knitr::opts_chunk$set(root.dir=normalizePath('hysplit/'))
+knitr::opts_chunk$set(root.dir=normalizePath(file.path(getwd(),'hysplit')))
 
 ```
 
@@ -23,8 +23,10 @@ if(!require(splitr)){devtools::install_github("rich-iannone/splitr"); require(sp
 Other packages used for this tutorial are:
 ```{r}
 library(lubridate)
-
-
+library(pbmcapply)
+library(dplyr)
+library(ggmap)
+library(ggplot2)
 ```
 # Backward trajectories of a single date
 
@@ -76,7 +78,6 @@ The `trajs` dataframe contains the trajectories. Let's plot them.
 
 
 ```{r}
-require(ggmap)
 plot_trajs <- function(trajs){
   
   # Get the boundary box: 50km around trajectories
@@ -128,24 +129,86 @@ plot_trajs(trajs)
 # Clustered trajectories over a long period of time
 We might be interested in trajectories over a long period of time.
 
-```{r, cache=T}
+```{r, cache=T, warning=F, message=F}
 date_from <- "2019-01-01"
 date_to <- "2019-12-31"
+dates <- seq(lubridate::date(date_from), lubridate::date(date_to), by="d")
+dates_split <- split(dates, ceiling(seq_along(dates)/5)) # Compute 5 days at time per core
 
-trajs.2019 <- splitr::hysplit_trajectory(
+trajs_at_dates <- function(dates){
+  tryCatch({
+    hysplit_trajectory(
       lon = lon,
       lat = lat,
       height = height,
       duration = duration,
-      days = seq(lubridate::date(date_from), lubridate::date(date_to), by="d"),
-      daily_hours = c(0, 6, 12, 18), # The weather dataset is available every 6-hours
+      days = dates,
+      daily_hours = c(0, 6, 12, 18),
       direction = "backward",
       met_type = met_type,
       extended_met = F,
       met_dir = dir_hysplit_met,
       exec_dir = dir_hysplit_output,
       clean_up = F
-)
+    ) 
+  },
+  error=function(c){
+    return(NA)
+  })
+}
 
+trajs.2019 <- do.call('rbind',
+                 pbmclapply(dates_split, trajs_at_dates,
+                            mc.cores = parallel::detectCores()-1))
 ```
 
+We use the very powerful [OpenAIR package](https://davidcarslaw.github.io/openair/) to analyse trajectories.
+
+```{r}
+if(!require(openair)){devtools::install_github('davidcarslaw/openair'); library(openair)}
+```
+
+We first need to make trajectories compatible with `openair` (e.g. rename or add certain fields):
+```{r}
+format_for_openair <- function(trajs){
+   # Update fields to be compatible with OpenAIR
+  trajs$hour.inc <- trajs$hour_along
+  trajs$date <- trajs$traj_dt_i
+  trajs$date2 <- trajs$traj_dt
+  trajs$year <- lubridate::year(trajs$traj_dt_i)
+  trajs$month <- lubridate::month(trajs$traj_dt_i)
+  trajs$day <- lubridate::date(trajs$traj_dt_i)
+
+  return(trajs)
+}
+
+trajs.2019 <- format_for_openair(trajs.2019)
+```
+
+
+Plotting clusters:
+
+```{r}
+plot_traj_clusters <- function(trajs, n_clusters=5, statistics="frequency"){
+  
+  openair::trajCluster(
+    trajs,
+    method = "Euclid",
+    n.cluster = n_clusters,
+    plot = T,
+    type = "default",
+    cols = "Set1",
+    split.after = FALSE,
+    map.fill = TRUE,
+    map.cols = "grey40",
+    map.alpha = 0.4,
+    projection = "mercator",
+    parameters = NULL,
+    orientation = c(90, 0, 0),
+    by.type = FALSE,
+    origin = TRUE
+  )
+}
+
+plot_traj_clusters(trajs.2019)
+```
