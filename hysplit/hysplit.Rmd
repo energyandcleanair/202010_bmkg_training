@@ -67,7 +67,8 @@ dir_hysplit_output <- here::here("hysplit_output") # Folders where HYSPLIT resul
 
 Now we can run the backward trajectory calculations!
 ```{r}
-trajs <- splitr::hysplit_trajectory(
+trajs_at_date <- function(date, met_type){
+  splitr::hysplit_trajectory(
       lon = lon,
       lat = lat,
       height = height,
@@ -80,8 +81,10 @@ trajs <- splitr::hysplit_trajectory(
       met_dir = dir_hysplit_met,
       exec_dir = dir_hysplit_output,
       clean_up = F
-)
-trajs
+  )
+}
+
+trajs <- trajs_at_date(date, met_type)
 ```
 
 The `trajs` dataframe contains the trajectories. Let's plot them.
@@ -119,7 +122,7 @@ plot_trajs <- function(trajs){
            legend.position="right",
            legend.key = element_rect(fill='white')) +
      labs(title=paste("Sources or air flowing into Jakarta"),
-          subtitle = date,
+          subtitle = unique(lubridate::date(trajs$date)),
           x='', y='',
           caption=paste0("Source: CREA based on HYSPLIT. ",
                          "Weather dataset: ", met_type, " ",
@@ -132,10 +135,28 @@ plot_trajs <- function(trajs){
 ```{r}
 plot_trajs(trajs)
 ```
+Using another weather dataset:
+```{r}
+trajs_at_date(date, met_type="gdas1") %>%
+  plot_trajs()
+```
 
+
+We can repeat this at other dates.
+```{r}
+trajs_at_date("2019-01-01", met_type) %>%
+  plot_trajs()
+```
+
+
+
+```{r}
+trajs_at_date("2019-01-01", met_type="gdas1") %>%
+  plot_trajs()
+```
 
 # Trajectories over a longer period: 2019
-We might be interested in trajectories over a longer period of time. Here we'll consider the whole year of 2019.
+We might be interested in trajectories over a longer period of time. Here we'll consider the whole of 2019.
 
 ```{r, cache=T, warning=F, message=F}
 date_from <- "2019-01-01"
@@ -222,26 +243,32 @@ plt.months <- trajPlot(
 Zooming in on a month:
 
 ```{r}
-selected_month <- 8
-plt.month <- trajPlot(
-  trajs.poll.2019 %>% filter(lubridate::month(date)==selected_month),
-  pollutant = "value",
-  type = "default",
-  map = TRUE,
-  group = NA,
-  map.fill = TRUE,
-  map.res = "default",
-  map.cols = "grey40",
-  map.alpha = 0.4,
-  projection = "mercator",
-  parameters = NULL,
-  orientation = c(90, 0, 0),
-  grid.col = "transparent",
-  npoints = 12,
-  origin = TRUE
-)
+plot_trajs_month <- function(trajs, month){
+  plt.month <- trajPlot(
+    trajs %>% filter(lubridate::month(date)==!!month),
+    pollutant = "value",
+    type = "default",
+    map = TRUE,
+    group = NA,
+    map.fill = TRUE,
+    map.res = "default",
+    map.cols = "grey40",
+    map.alpha = 0.4,
+    projection = "mercator",
+    parameters = NULL,
+    orientation = c(90, 0, 0),
+    grid.col = "transparent",
+    npoints = 12,
+    origin = TRUE
+  )
+}
+
+plot_trajs_month(trajs.poll.2019, 8)
 ```
 
+```{r}
+plot_trajs_month(trajs.poll.2019, 1)
+```
 Let's overlay these trajectories with industries.
 
 We're using industry locations from [PROPER](https://proper.menlhk.go.id/proper/berita/detail/35) programme.
@@ -290,9 +317,9 @@ plot_trajs_industries <- function(trajs, industries, subtitle){
 
     # Industry
     geom_point(data=industries, inherit.aes = F, aes(x=longitude,y=latitude, shape=Sector, fill=Sector),
-               color="transparent", stroke=2.5, alpha=0.8, position="jitter") +
+               alpha=0.8, position="jitter") +
      # theme
-    scale_shape_manual(name="Sector", values=c(0,1,2,3,4,5)) +
+    scale_shape_manual(name="Sector", values=c(15,16,17,18,19,20)) +
     scale_fill_brewer(name="Sector", palette="Dark2") +
     scale_color_gradientn(colours = c("cyan","yellow","red")) +
     theme(panel.background = element_rect(fill='lightgray'),
@@ -305,18 +332,23 @@ plot_trajs_industries <- function(trajs, industries, subtitle){
           subtitle = subtitle,
           x='', y='',
           caption=paste0("Source: CREA based on PROPER and HYSPLIT. ",
-                         "Weather dataset: ", met_type, " ",
+                         "Weather dataset: ", met_type, ". ",
                          "Receptor height: ", height, "m. ",
                          "Duration: ", duration, " hour."))
    
 }
 
+```
+
+```{r}
+selected_month <- 8
 plot_trajs_industries(
   trajs=trajs.poll.2019 %>% filter(lubridate::month(date)==selected_month),
   industries=proper,
   subtitle=paste("Month:", selected_month))
 ```
 
+Zooming in:
 ```{r}
 plot_trajs_industries(
   trajs=trajs.poll.2019 %>% filter(lubridate::month(date)==selected_month),
@@ -326,7 +358,14 @@ coord_cartesian(xlim=c(106.5,108), ylim=c(-8,-6))
   
 ```
 
-
+Another month:
+```{r}
+plot_trajs_industries(
+  trajs=trajs.poll.2019 %>% filter(lubridate::month(date)==1),
+  industries=proper,
+  subtitle=paste("Month:", 1))
+  
+```
 
 `OpenAIR` package offers many interesting plotting and analysis fonctionalities: [read here](https://bookdown.org/david_carslaw/openair/sec-trajPlot.html)
 
@@ -359,7 +398,7 @@ plot_traj_clusters <- function(trajs, n_clusters=4, statistics="frequency"){
 ```
 
 
-### Combining EDGAR with HYSPLIT
+<!-- ### Combining EDGAR with HYSPLIT -->
 
 <!-- ```{r} -->
 <!-- clusters.data <- plt.trajs.2019$plot$data -->
