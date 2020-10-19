@@ -1,6 +1,6 @@
 ---
 title: "Training for BMKG - HYSPLIT"
-author: "Centre for Research on Energy and Clean Air (CREA)"
+author: "Centre for Research on Energy and Clean Air (CREA). Contact: hubert@energyandcleanair.org"
 date: "19 October 2020"
 output: html_document
 ---
@@ -154,6 +154,18 @@ trajs_at_date("2019-01-01", met_type) %>%
 trajs_at_date("2019-01-01", met_type="gdas1") %>%
   plot_trajs()
 ```
+
+```{r}
+trajs_at_date("2019-11-01", met_type) %>%
+  plot_trajs()
+```
+
+```{r}
+trajs_at_date("2019-11-01", met_type="gdas1") %>%
+  plot_trajs()
+```
+
+The receptor *height* is another important factor, for which sensitivity analyses should be carried.
 
 # Trajectories over a longer period: 2019
 We might be interested in trajectories over a longer period of time. Here we'll consider the whole of 2019.
@@ -367,7 +379,7 @@ plot_trajs_industries(
   
 ```
 
-`OpenAIR` package offers many interesting plotting and analysis fonctionalities: [read here](https://bookdown.org/david_carslaw/openair/sec-trajPlot.html)
+`OpenAIR` package offers many interesting plotting and analysis fonctionalities: [read here](https://bookdown.org/david_carslaw/openair/sec-trajPlot.html). A great illustration of `OpenAIR` functionalities is also available [here](https://content.sciendo.com/downloadpdf/journals/oszn/28/2/article-p22.pdf).
 
 
 For instance, we can identify the most representative air trajectories:
@@ -394,9 +406,36 @@ plot_traj_clusters <- function(trajs, n_clusters=4, statistics="frequency"){
   )
 }
 
-(plt.trajs.2019 <- plot_traj_clusters(trajs.2019))
+plot_traj_clusters(trajs.2019)
 ```
 
+```{r}
+
+plot_traj_clusters_months <- function(trajs, n_clusters=4, statistics="frequency"){
+  
+  openair::trajCluster(
+    trajs.2019,
+    method = "Euclid",
+    n.cluster = n_clusters,
+    plot = T,
+    type = "month",
+    cols = "Set1",
+    split.after = FALSE,
+    map.fill = TRUE,
+    map.cols = "grey40",
+    map.alpha = 0.4,
+    projection = "mercator",
+    parameters = NULL,
+    orientation = c(90, 0, 0),
+    by.type = FALSE,
+    origin = TRUE
+  )
+}
+
+ plot_traj_clusters_months(trajs.2019)
+
+
+```
 
 <!-- ### Combining EDGAR with HYSPLIT -->
 
