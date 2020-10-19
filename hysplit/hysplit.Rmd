@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message=F)
+knitr::opts_chunk$set(echo = TRUE, message=F, warning=F, fig.width = 10)
 knitr::opts_chunk$set(root.dir=normalizePath(file.path(getwd(),'hysplit')))
 
 ```
@@ -99,8 +99,7 @@ plot_trajs <- function(trajs){
     unname()
     
   basemap <- ggmap::get_stamenmap(bbox = bbox,
-                                  zoom = 8,
-                                  where="/Volumes/ext1/data/basemap")
+                                  zoom = 8)
   
   ggmap(basemap) +
      coord_cartesian() +
@@ -200,7 +199,7 @@ trajs.poll.2019 <- trajs.2019 %>% left_join(pm25.2019, by=c("day"="date"))
 ### Plotting monthly trajectories, colored by PM2.5 levels
 
 ```{r}
-plt.month <- trajPlot(
+plt.months <- trajPlot(
   trajs.poll.2019,
   pollutant = "value",
   type = "month",
@@ -213,15 +212,126 @@ plt.month <- trajPlot(
   projection = "mercator",
   parameters = NULL,
   orientation = c(90, 0, 0),
-  grid.col = "deepskyblue",
+  grid.col = "transparent",
   npoints = 12,
   origin = TRUE
 )
 
 ```
 
+Zooming in on a month:
 
-Plotting clusters:
+```{r}
+selected_month <- 8
+plt.month <- trajPlot(
+  trajs.poll.2019 %>% filter(lubridate::month(date)==selected_month),
+  pollutant = "value",
+  type = "default",
+  map = TRUE,
+  group = NA,
+  map.fill = TRUE,
+  map.res = "default",
+  map.cols = "grey40",
+  map.alpha = 0.4,
+  projection = "mercator",
+  parameters = NULL,
+  orientation = c(90, 0, 0),
+  grid.col = "transparent",
+  npoints = 12,
+  origin = TRUE
+)
+```
+
+Let's overlay these trajectories with industries.
+
+We're using industry locations from [PROPER](https://proper.menlhk.go.id/proper/berita/detail/35) programme.
+```{r}
+proper <- read.csv(file.path('../data/proper_industries.csv')) %>%
+  mutate(Sector=recode(Sector,
+         `Petroleum, Chemicals & Plastics`="Petrochemicals & Plastics")) %>%
+  filter(Sector %in% c("Metal & non-metallic minerals",
+             "Petrochemicals & Plastics",
+             "Oil & Gas refining",
+             "Power & Energy",
+             "Cement, Steel & heavy industry",
+             "Glass"
+             ))
+```
+
+```{r}
+plot_trajs_industries <- function(trajs, industries, subtitle){
+  
+  # Get the boundary box: 50km around trajectories
+  buffer_km <- 100
+  bbox <- sf::st_as_sf(trajs, coords=c("lon","lat"), crs=4326) %>%
+    sf::st_transform(crs=3857) %>% # Reproject in pseudo-mercator to have meter unit
+    sf::st_buffer(buffer_km*1E3) %>%
+    sf::st_transform(crs=4326) %>%
+    sf::st_bbox() %>%
+    unname()
+    
+  basemap <- ggmap::get_stamenmap(bbox = bbox,
+                                  zoom = 8,
+                                  where="/Volumes/ext1/data/basemap")
+  
+  ggmap(basemap) +
+     coord_cartesian() +
+     # trajectory lines
+     geom_path(data = trajs %>%
+                 dplyr::arrange(hour_along) %>%
+                 mutate(subcluster=paste(traj_dt_i, hour_along %/% 8)),
+               arrow = arrow(angle=18, length=unit(0.1,"inches")),
+               aes(x = lon, y = lat, group=subcluster, color=value),
+               alpha=0.6) +
+    geom_path(data = trajs %>% filter(value<70),
+               aes(x = lon, y = lat, group=traj_dt_i, color=value), alpha=0.6) +
+    geom_path(data = trajs %>% filter(value>=70),
+               aes(x = lon, y = lat, group=traj_dt_i, color=value), alpha=0.6) +
+
+    # Industry
+    geom_point(data=industries, inherit.aes = F, aes(x=longitude,y=latitude, shape=Sector, fill=Sector),
+               color="transparent", stroke=2.5, alpha=0.8, position="jitter") +
+     # theme
+    scale_shape_manual(name="Sector", values=c(0,1,2,3,4,5)) +
+    scale_fill_brewer(name="Sector", palette="Dark2") +
+    scale_color_gradientn(colours = c("cyan","yellow","red")) +
+    theme(panel.background = element_rect(fill='lightgray'),
+           panel.border = element_rect(color='black', fill=NA),
+           panel.grid = element_line(color=NA),
+           plot.caption = element_text(lineheight = 0.9),
+           legend.position="right",
+           legend.key = element_rect(fill='white')) +
+    labs(title=paste("Sources or air flowing into Jakarta"),
+          subtitle = subtitle,
+          x='', y='',
+          caption=paste0("Source: CREA based on PROPER and HYSPLIT. ",
+                         "Weather dataset: ", met_type, " ",
+                         "Receptor height: ", height, "m. ",
+                         "Duration: ", duration, " hour."))
+   
+}
+
+plot_trajs_industries(
+  trajs=trajs.poll.2019 %>% filter(lubridate::month(date)==selected_month),
+  industries=proper,
+  subtitle=paste("Month:", selected_month))
+```
+
+```{r}
+plot_trajs_industries(
+  trajs=trajs.poll.2019 %>% filter(lubridate::month(date)==selected_month),
+  industries=proper,
+  subtitle=paste("Month:", selected_month)) +
+coord_cartesian(xlim=c(106.5,108), ylim=c(-8,-6)) 
+  
+```
+
+
+
+`OpenAIR` package offers many interesting plotting and analysis fonctionalities: [read here](https://bookdown.org/david_carslaw/openair/sec-trajPlot.html)
+
+
+For instance, we can identify the most representative air trajectories:
 
 ```{r}
 plot_traj_clusters <- function(trajs, n_clusters=4, statistics="frequency"){
@@ -248,7 +358,6 @@ plot_traj_clusters <- function(trajs, n_clusters=4, statistics="frequency"){
 (plt.trajs.2019 <- plot_traj_clusters(trajs.2019))
 ```
 
-Many more plotting available [here](https://bookdown.org/david_carslaw/openair/sec-trajPlot.html)
 
 ### Combining EDGAR with HYSPLIT
 

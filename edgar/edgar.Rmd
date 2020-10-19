@@ -50,7 +50,7 @@ nc.files <- reshape2::colsplit(gsub(paste(dir_edgar,".0.1x0.1.nc",sep="|"), "", 
 
 nc_to_province_emissions <- function(file, adm1){
   r <- raster::raster(file)
-  s <- exact_extract(r, st_as_sf(adm1), 'weighted_sum', weights=area(r))
+  s <- exact_extract(r, st_as_sf(adm1), 'weighted_sum', weights=area(r)) # Area in km2
   s.kt.yr <- stat.nox * 3600 * 24 * 365
   result <- data.frame(adm1) %>% dplyr::select(province=NAME_1)
   result$emission.kt.yr <- s.kt.yr
@@ -60,12 +60,31 @@ nc_to_province_emissions <- function(file, adm1){
 province.emissions <- nc.files %>%
   rowwise() %>%
   mutate(province.emissions=list(nc_to_province_emissions(path, adm1))) %>%
-  tidyr::unnest(province.emissions)
+  tidyr::unnest(province.emissions) %>%
+  mutate(sector_name=recode(sector,
+                            ENE="Power",
+                            REF="Refinery",
+                            IND="Manufacturing",
+                            TNR="Aviation",
+                            TRO="Road",
+                            TNR="Train/Ship",
+                            RCO="Building",
+                            PRO="Fuel exploitation",
+                            NMM="Non-metallic minerals",
+                            CHE="Chemical",
+                            IRO="Iron & Steel",
+                            NFE="Non-ferrous metals",
+                            AWB="Agriculture waste burning",
+                            AGS="Agriculture soils",
+                            SWD="Solid waste",
+                            WWT="Waste water",
+                            FFF="Fossil fuel fires"
+                            ))
 
 ```
 
 ```{r}
-ggplot(province.emissions %>% filter(sector=="Total")) +
+ggplot(province.emissions %>% filter(sector!="Total")) +
   geom_bar(stat="identity", aes(x=emission.kt.yr, y=province, fill=sector)) +
   facet_wrap(~pollutant)
 
