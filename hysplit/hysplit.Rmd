@@ -436,22 +436,8 @@ plot_traj_clusters_months <- function(trajs, n_clusters=4, statistics="frequency
 
 
 ```
+```{r}
+?trajLevel
+trajLevel(trajs.2019, type="month", statistic = "frequency", projection="mercator", parameters=NULL)
 
-<!-- ### Combining EDGAR with HYSPLIT -->
-
-<!-- ```{r} -->
-<!-- clusters.data <- plt.trajs.2019$plot$data -->
-<!-- clusters.data.sf <- sf::st_as_sf(clusters.data, coords=c("lon","lat"), crs=4326) %>% -->
-<!--   group_by(MyGroupVar) %>% arrange(date) %>% dplyr::summarise(do_union = FALSE) %>% st_cast("LINESTRING") -->
-<!-- cluster.data.spatial <- as_Spatial(clusters.data.sf) -->
-
-<!-- nc.file <- file.path("..","edgar","v50_SO2_2015.0.1x0.1.nc") -->
-<!-- r <- raster::raster(nc.file) %>% raster::mask(adm1) -->
-<!-- cuts <- c(.Machine$double.eps*1e13, 6e-4, 6e-2, 6e-1, 6, 30, 60, 240, 450, 1200)*1e-13 #set breaks -->
-<!-- pal <- colorRampPalette(c("darkgreen","yellow", "red")) -->
-
-<!-- plot(r, breaks=cuts, col = pal(10), ext=bbox(adm1), box=F) + #plot with defined breaks -->
-<!--   plot(cluster.data.spatial, add=T) -->
-
-
-<!-- ``` -->
+```

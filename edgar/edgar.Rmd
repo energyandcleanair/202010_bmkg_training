@@ -6,10 +6,8 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(message = FALSE)
-knitr::opts_chunk$set(warning = FALSE)
-knitr::opts_chunk$set(root.dir=normalizePath('edgar/'))
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10)
+knitr::opts_chunk$set(root.dir=normalizePath(file.path(getwd(),'edgar')))
 ```
 
 # EDGAR Emission inventory
@@ -26,14 +24,24 @@ library(ggplot2)
 library(tidyr)
 library(reshape2)
 if(!require(eixport)){devtools::install_github("atmoschem/eixport"); require(eixport)}
-
+library(exactextractr)
+library(sf)
+library(raster)
+library(rasterVis)
+library(ncdf4)
+library(GADMTools)
+library(exactextractr)
 ```
 
+Get Indonesian provinces:
+```{r}
+adm1 <- GADMTools::gadm_sf_loadCountries("IDN", level=1, simplify=0.1)$sf %>% as_Spatial
+```
 
 ## Downloading data
 We download data from [EDGAR](https://edgar.jrc.ec.europa.eu/overview.php?v=50_AP) using `eixport` package.
 
-```{r download1, cache=T, message=F}
+```{r download1, cache=TRUE, message=FALSE, results='hide'}
 dir_edgar <- "/Volumes/ext1/data/emission/edgar/"
 
 # Gridded data
@@ -42,55 +50,51 @@ z <- list.files(dir_edgar, "*.zip", full.names = T)
 f <- lapply(z, unzip, overwrite=F, exdir=dir_edgar)
 file.remove(z)
 ```
-```{r}
+```{r cache=TRUE, message=FALSE, warning=FALSE, results='hide'}
 nc.paths <- list.files(dir_edgar, "*.nc", full.names = T)
-nc.files <- reshape2::colsplit(gsub(paste(dir_edgar,".0.1x0.1.nc",sep="|"), "", ncs), "_", c("version","pollutant","year", "sector", "subsector")) %>%
+nc.files <- reshape2::colsplit(gsub(paste(dir_edgar,".0.1x0.1.nc",sep="|"), "", nc.paths), "_", c("version","pollutant","year", "sector", "subsector")) %>%
   mutate(path=nc.paths,
          sector=ifelse(sector=="","Total",sector))
 
 nc_to_province_emissions <- function(file, adm1){
+  print(file)
   r <- raster::raster(file)
-  s <- exact_extract(r, st_as_sf(adm1), 'weighted_sum', weights=area(r)) # Area in km2
-  s.kt.yr <- stat.nox * 3600 * 24 * 365
+  s <- exact_extract(r, st_as_sf(adm1), 'weighted_sum', weights=area(r), progress=F) # Area in km2
+  s.kt.yr <- s * 3600 * 24 * 365
   result <- data.frame(adm1) %>% dplyr::select(province=NAME_1)
   result$emission.kt.yr <- s.kt.yr
   return(result)
 }
 
-province.emissions <- nc.files %>%
-  rowwise() %>%
-  mutate(province.emissions=list(nc_to_province_emissions(path, adm1))) %>%
-  tidyr::unnest(province.emissions) %>%
-  mutate(sector_name=recode(sector,
-                            ENE="Power",
-                            REF="Refinery",
-                            IND="Manufacturing",
+province.emissions.raw <- tibble(nc.files) %>% 
+  mutate(province.emissions=purrr::map(path, nc_to_province_emissions, adm1=adm1)) %>%
+  tidyr::unnest(province.emissions)
+```
+Simplifying sectors:
+```{r}
+province.emissions <- province.emissions.raw %>%
+  mutate(sector_name=dplyr::recode(sector,
+                            ENE="Energy",
+                            IND="Industry",
                             TNR="Aviation",
-                            TRO="Road",
-                            TNR="Train/Ship",
-                            RCO="Building",
-                            PRO="Fuel exploitation",
-                            NMM="Non-metallic minerals",
-                            CHE="Chemical",
-                            IRO="Iron & Steel",
-                            NFE="Non-ferrous metals",
-                            AWB="Agriculture waste burning",
-                            AGS="Agriculture soils",
-                            SWD="Solid waste",
-                            WWT="Waste water",
-                            FFF="Fossil fuel fires"
+                            TRO="Road Transport",
+                            RCO="Residential & Commercial",
+                            AWB="Agriculture Waste Burning",
+                            .default="Others"
                             ))
 
 ```
 
+
+
 ```{r}
 ggplot(province.emissions %>% filter(sector!="Total")) +
-  geom_bar(stat="identity", aes(x=emission.kt.yr, y=province, fill=sector)) +
+  geom_bar(stat="identity", aes(x=emission.kt.yr, y=province, fill=sector_name)) +
   facet_wrap(~pollutant)
 
 ```
 
-```{r download, cache=T, message=F}
+```{r download, cache=TRUE, message=FALSE, results='hide'}
 # SO2
 download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=227347","so2.zip")
 unzip(zipfile="so2.zip", files = "v50_SO2_1970_2015.xls", exdir=".")
@@ -145,14 +149,7 @@ ggplot(d %>% filter(year==2015) %>% arrange(pollutant, value)) +
 ## Looking at provincial data
 This time, we'll used the 2015 gridded data from EDGAR 5.0.
 
-```{r, results="hide", message=F, warning=F}
-library(raster)
-library(rasterVis)
-library(ncdf4)
-library(GADMTools)
-library(exactextractr)
-adm1 <- GADMTools::gadm_sf_loadCountries("IDN", level=1, simplify=0.1)$sf %>% as_Spatial
-```
+
 
 ### Maps
 ```{r, results="hide", message=F, warning=F}
@@ -166,7 +163,7 @@ plot(r.so2, breaks=cuts, col = pal(10), ext=bbox(adm1), box=F) + #plot with defi
 plot(adm1, add=T, lwd=0.6, border="#888888")
 ```
 
-```{r, results="hide", message=F, warning=F}
+```{r, results="hide", cache=TRUE, message=FALSE, warning=FALSE}
 download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=217594","nox_grid.zip")
 unzip(zipfile="nox_grid.zip", files = "v50_NOx_2015.0.1x0.1.nc", exdir=".")
 r.nox <- raster::raster("v50_NOx_2015.0.1x0.1.nc")
@@ -180,7 +177,7 @@ plot(adm1, add=T, lwd=0.6, border="#888888")
 
 ```
 
-```{r, results="hide", message=F, warning=F}
+```{r, results='hide', cache=TRUE, message=FALSE, warning=FALSE}
 download.file("https://edgar.jrc.ec.europa.eu/download.php?edgar_dst=223979","pm25_grid.zip")
 unzip(zipfile="pm25_grid.zip", files = "v50_PM2.5_2015.0.1x0.1.nc", exdir=".")
 r.pm25 <- raster::raster("v50_PM2.5_2015.0.1x0.1.nc")
@@ -195,22 +192,22 @@ plot(adm1, add=T, lwd=0.6, border="#888888")
 ```
 
 ### Statistics
-```{r zonalstats}
+```{r zonalstats, message=FALSE}
 # EDGAR data is given in g / m2 / s. Area in km2
 # 1 g/m2/s * km2 = 1E3 kg / s =  t / s = (3600*24*365) t / yr
 # We therefore weight every cell by its surface (not every pixel has the same surface)
-stat.nox <- exact_extract(r.nox, st_as_sf(adm1), 'weighted_sum', weights=area(r.nox))
-stat.not.kt.yr <- stat.nox * 3600 * 24 * 365
+stat.nox <- exact_extract(r.nox, st_as_sf(adm1), 'weighted_sum', weights=area(r.nox), progress=F)
+stat.nox.kt.yr <- stat.nox * 3600 * 24 * 365
 
-stat.so2 <- exact_extract(r.so2, st_as_sf(adm1), 'weighted_sum', weights=area(r.so2))
+stat.so2 <- exact_extract(r.so2, st_as_sf(adm1), 'weighted_sum', weights=area(r.so2), progress=F)
 stat.so2.kt.yr <- stat.so2 * 3600 * 24 * 365
 
-stat.pm25 <- exact_extract(r.pm25, st_as_sf(adm1), 'weighted_sum', weights=area(r.pm25))
+stat.pm25 <- exact_extract(r.pm25, st_as_sf(adm1), 'weighted_sum', weights=area(r.pm25), progress=F)
 stat.pm25.kt.yr <- stat.pm25 * 3600 * 24 * 365
 
 
-stat = cbind(data.frame(adm1), nox=stat.not.kt.yr, so2=stat.so2) %>%
-  tidyr::pivot_longer(cols=c(nox, so2), names_to="pollutant")
+stat = cbind(data.frame(adm1), nox=stat.nox.kt.yr, so2=stat.so2.kt.yr, pm25=stat.pm25.kt.yr) %>%
+  tidyr::pivot_longer(cols=c(nox, so2, pm25), names_to="pollutant")
 ggplot(stat) +
   geom_bar(aes(y=NAME_1, x=value), stat="identity") +
   facet_wrap(~pollutant) +
@@ -218,25 +215,3 @@ ggplot(stat) +
        y=NULL, x="kt / yr")
 ```
 
-
-```{r}
-stat.nox <- exact_extract(r.nox, st_as_sf(adm1), 'weighted_mean', weights=area(r.nox)) #kg/m2/s2
-stat.nox.area <- exact_extract(area(r.nox), st_as_sf(adm1), 'sum') #km2
-stat.nox.total <- stat.nox * stat.nox.area 
-# 1 kg/m2/s * km2 = 1E6 kg / s = 1000 t / s = 1000*(3600*24*365) t / yr
-stat.nox.total*1000*3600*24*365
-
-stat.so2 <- exact_extract(r.so2, st_as_sf(adm1), 'weighted_sum', weights=area(r.nox))
-stat.so2.area <- exact_extract(area(r.so2), st_as_sf(adm1), 'sum')
-stat.so2.total <- stat.so2 * stat.so2.area
-
-
-
-stat = cbind(data.frame(adm1), nox=stat.nox, so2=stat.so2) %>%
-  tidyr::pivot_longer(cols=c(nox, so2), names_to="pollutant")
-ggplot(stat) +
-  geom_bar(aes(y=NAME_1, x=value), stat="identity") +
-  facet_wrap(~pollutant) +
-  labs(title="Sum of pollutant emission per province",
-       y=NULL, x="kg / m2 / s")
-```
